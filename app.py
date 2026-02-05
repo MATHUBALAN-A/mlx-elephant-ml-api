@@ -1,14 +1,13 @@
 
 import os
-# import pandas as pd # Removed pandas
+import pandas as pd
 import pickle
 from flask import Flask, request, jsonify
-import numpy as np # Added numpy
+import numpy as np
 
 app = Flask(__name__)
 
 # ================= LOAD MODEL =================
-# On Render, app.py and xgb_model.pkl are expected to be in the same directory
 MODEL_PATH = "xgb_model.pkl"
 
 try:
@@ -19,8 +18,8 @@ except Exception as e:
     print(f"❌ Error loading model: {e}")
     model = None
 
-# Feature columns are no longer explicitly needed if passing NumPy arrays directly
-# feature_columns = [f"px_{i}" for i in range(768)]
+# Feature columns (as defined in the training process)
+feature_columns = [f"px_{i}" for i in range(768)]
 
 # Label mapping
 def get_label_name(label):
@@ -47,30 +46,28 @@ def predict():
     try:
         data = request.get_json(force=True)
 
-        # Convert to NumPy array
         # Expecting: list of 768 values (single sample) or list of lists (multiple samples)
         if not isinstance(data, list):
             return jsonify({"error": "Invalid input format. Expected a list or list of lists."}), 400
 
-        # Validate input structure and convert to numpy array
+        # Validate input structure
         if len(data) == 0:
             return jsonify({"error": "Input list cannot be empty."}), 400
 
-        # If it's a list of lists, treat as multiple samples
+        # Determine if single or multiple samples and convert to DataFrame with feature names
         if isinstance(data[0], list):
-            input_array = np.array(data, dtype=float)
-            if input_array.shape[1] != 768:
-                return jsonify({"error": f"Each sample must contain exactly 768 pixel values. Received {input_array.shape[1]}."}), 400
-        # If it's a single list, treat as single sample
+            # Multiple samples
+            input_df = pd.DataFrame(data, columns=feature_columns)
+            if input_df.shape[1] != 768:
+                return jsonify({"error": f"Each sample must contain exactly 768 pixel values. Received {input_df.shape[1]}."}), 400
         elif isinstance(data, list) and len(data) == 768:
-            input_array = np.array([data], dtype=float) # Wrap in a list for consistent 2D shape
+            # Single sample
+            input_df = pd.DataFrame([data], columns=feature_columns)
         else:
-            return jsonify({"error": "Invalid input format. Expected a list of 768 pixel values or a list of lists of 768 pixel values."
-            }), 400
+            return jsonify({"error": "Invalid input format. Expected a list of 768 pixel values or a list of lists of 768 pixel values."}), 400
 
-
-        # Make predictions using the NumPy array directly
-        preds = model.predict(input_array)
+        # Make predictions using the DataFrame
+        preds = model.predict(input_df)
         result = [get_label_name(int(p)) for p in preds]
 
         return jsonify({"prediction": result})
