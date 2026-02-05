@@ -1,25 +1,24 @@
 
 import os
-import pandas as pd
-import pickle
+# Removed pandas as per user constraint
+import joblib # Changed from pickle to joblib
 from flask import Flask, request, jsonify
 import numpy as np
 
 app = Flask(__name__)
 
 # ================= LOAD MODEL =================
-MODEL_PATH = "xgb_model.pkl"
+MODEL_PATH = "xgb_model.joblib" # Changed to .joblib
 
 try:
-    with open(MODEL_PATH, 'rb') as f:
-        model = pickle.load(f)
+    model = joblib.load(MODEL_PATH) # Changed to joblib.load
     print(f"✅ Model loaded successfully from {MODEL_PATH}")
 except Exception as e:
     print(f"❌ Error loading model: {e}")
     model = None
 
-# Feature columns (as defined in the training process)
-feature_columns = [f"px_{i}" for i in range(768)]
+# Feature columns no longer needed as model will be trained on NumPy arrays without names
+# feature_columns = [f"px_{i}" for i in range(768)]
 
 # Label mapping
 def get_label_name(label):
@@ -46,28 +45,27 @@ def predict():
     try:
         data = request.get_json(force=True)
 
-        # Expecting: list of 768 values (single sample) or list of lists (multiple samples)
+        # Convert to NumPy array directly, validate shape
         if not isinstance(data, list):
-            return jsonify({"error": "Invalid input format. Expected a list or list of lists."}), 400
+            return jsonify({"error": "Invalid input format. Expected a JSON array."}), 400
 
-        # Validate input structure
         if len(data) == 0:
-            return jsonify({"error": "Input list cannot be empty."}), 400
+            return jsonify({"error": "Input JSON array cannot be empty."}), 400
 
-        # Determine if single or multiple samples and convert to DataFrame with feature names
+        # Determine if single or multiple samples and convert to NumPy array
         if isinstance(data[0], list):
             # Multiple samples
-            input_df = pd.DataFrame(data, columns=feature_columns)
-            if input_df.shape[1] != 768:
-                return jsonify({"error": f"Each sample must contain exactly 768 pixel values. Received {input_df.shape[1]}."}), 400
-        elif isinstance(data, list) and len(data) == 768:
-            # Single sample
-            input_df = pd.DataFrame([data], columns=feature_columns)
+            input_array = np.array(data, dtype=float)
+            if input_array.shape[1] != 768:
+                return jsonify({"error": f"Each sample must contain exactly 768 pixel values. Received {input_array.shape[1]}."}), 400
+        elif isinstance(data, (int, float)) or (isinstance(data, list) and len(data) == 768 and all(isinstance(x, (int, float)) for x in data)):
+            # Single sample (list of 768 values)
+            input_array = np.array([data], dtype=float) # Wrap in a list for consistent 2D shape
         else:
             return jsonify({"error": "Invalid input format. Expected a list of 768 pixel values or a list of lists of 768 pixel values."}), 400
 
-        # Make predictions using the DataFrame
-        preds = model.predict(input_df)
+        # Make predictions using the NumPy array directly
+        preds = model.predict(input_array)
         result = [get_label_name(int(p)) for p in preds]
 
         return jsonify({"prediction": result})
@@ -78,6 +76,5 @@ def predict():
 # ================= RUN SERVER =================
 
 if __name__ == "__main__":
-    # Render automatically sets the PORT environment variable
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

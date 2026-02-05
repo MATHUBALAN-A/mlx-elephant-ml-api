@@ -4,4 +4,4 @@ numpy
 xgboost
 scikit-learn
 joblib
-pandas
+# Removed pandas
